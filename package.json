@@ -1,6 +1,6 @@
 {
   "name": "commanderbot",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "A bot for drawing random commanders",
   "main": "index.js",
   "scripts": {
