@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { Collection, SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -15,14 +15,20 @@ module.exports = {
 	async execute(interaction) {
 		const { events } = interaction.client;
 
-		events.set(interaction.guild.id, { players: new Collection() });
+		events.set(interaction.guild.id, { players: new Map() });
 
 		const event = events.get(interaction.guild.id);
 
 		event.mulligans = interaction.options.getInteger('mulligans') ?? 0;
+		const eventJson = JSON.stringify(event, (key, value) => {
+			if (key == 'players')
+				return undefined;
+			return value;
+		});
+		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.evt`), eventJson);
+		if (fs.existsSync(path.join('cache', 'events', `${interaction.guild.id}.plr`)))
+			fs.rmSync(path.join('cache', 'events', `${interaction.guild.id}.plr`));
 
-		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.evt`), JSON.stringify(event));
-
-		await interaction.reply('Created!');
+		await interaction.reply({ content: 'Created!', ephemeral: true });
 	},
 };

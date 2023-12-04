@@ -39,14 +39,29 @@ for (const file of eventFiles) {
 		client.on(event.name, (...args) => event.execute(...args));
 }
 
-const gameEventsPath = path.join(__dirname, 'cache', 'events');
+const cachePath = path.join(__dirname, 'cache');
+if (!fs.existsSync(cachePath))
+	fs.mkdirSync(cachePath);
+const gameEventsPath = path.join(cachePath, 'events');
+if (!fs.existsSync(gameEventsPath))
+	fs.mkdirSync(gameEventsPath);
 const gameEventFiles = fs.readdirSync(gameEventsPath).filter(file => file.endsWith('.evt'));
 
 for (const file of gameEventFiles) {
 	const filePath = path.join(gameEventsPath, file);
+
 	const event = JSON.parse(fs.readFileSync(filePath));
-	client.events.set(file.substring(0, file.length - 4), event);
-	console.log(file.substring(file.indexOf('-')));
+
+	const eventKey = file.substring(0, file.length - 4);
+	const playerPath = path.join(gameEventsPath, `${eventKey}.plr`);
+	console.log(playerPath);
+	if (fs.existsSync(playerPath)) {
+		const rawData = fs.readFileSync(playerPath);
+		event.players = new Map(Object.entries(JSON.parse(rawData)));
+	} else
+		event.players = new Map();
+
+	client.events.set(eventKey, event);
 }
 
 client.login(token);

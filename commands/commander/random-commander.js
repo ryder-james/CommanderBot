@@ -9,34 +9,38 @@ module.exports = {
 		.setName('random-commander')
 		.setDescription('Generates a random commander, based on current format rules.'),
 	async execute(interaction) {
-		await interaction.deferReply({ ephemeral: true });
+		await interaction.deferReply();
 
 		const { events } = interaction.client;
 
 		if (!events.has(interaction.guild.id)) {
-			await interaction.reply({ content: 'A Host must first start an Event!', ephemeral: true });
+			await interaction.editReply('A Host must first start an Event!');
 			return;
 		}
 
 		const event = events.get(interaction.guild.id);
 
 		if (!event.players.has(interaction.user.id))
-			event.players.set(interaction.user.id, { 'mulligans': 2 });
+			event.players.set(interaction.user.id, { 'mulligans': event.mulligans });
 
 		const player = event.players.get(interaction.user.id);
 		const commanders = await getCommanders(interaction);
 
-		if (!player.commander) {
-			player.mulligans = 2;
-			player.commander = getRandomCommander(commanders);
+		if (!player.commanderId) {
+			player.mulligans = event.mulligans;
+			player.commanderId = getRandomCommander(commanders).id;
 		}
 
-		const response = await interaction.editReply(buildSingleCommanderReply(player.commander, player.mulligans));
-		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.evt`), JSON.stringify(event));
+		const response = await interaction.editReply(buildSingleCommanderReply(commanderFromId(player.commanderId, commanders), player.mulligans));
+		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.plr`), JSON.stringify(Object.fromEntries(event.players)));
 
 		await buildMulliganCallback(interaction, commanders, response);
 	},
 };
+
+function commanderFromId(commanderId, commanders) {
+	return commanders.find(commander => commander.id === commanderId);
+}
 
 function getRandomCommander(commanders) {
 	return commanders[Math.floor(Math.random() * commanders.length)];
@@ -52,56 +56,60 @@ async function buildMulliganCallback(interaction, commanders, response) {
 
 		if (confirmation.customId === 'mulligan') {
 			player.mulligans--;
-			player.commander = getRandomCommander(commanders);
-			const rec_response = await confirmation.update(buildSingleCommanderReply(player.commander, player.mulligans));
+			player.commanderId = getRandomCommander(commanders).id;
+			const rec_response = await confirmation.update(buildSingleCommanderReply(commanderFromId(player.commanderId, commanders), player.mulligans));
 			buildMulliganCallback(interaction, commanders, rec_response);
 		} else if (confirmation.customId === 'confirm') {
 			player.mulligans = -1;
-			await confirmation.update(buildSingleCommanderReply(player.commander, player.mulligans));
+			await confirmation.update(buildSingleCommanderReply(commanderFromId(player.commanderId, commanders), player.mulligans));
 		}
 
-		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.evt`), JSON.stringify(event));
+		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.plr`), JSON.stringify(Object.fromEntries(event.players)));
 	} catch (e) {
 		await interaction.editReply({ content: 'Confirmation not received within 1 minute, cancelling', components: [] });
 	}
 }
 
 function buildSingleCommanderReply(commander, mulliganCount) {
-	const imageEmbed = new EmbedBuilder()
-		.setTitle(commander.name)
-		.setURL(commander.scryfall_uri)
-		.addFields(
-			{ name: 'Mana Cost', value: commander.mana_cost },
-			{ name: 'Type', value: commander.type_line },
-			{ name: 'Oracle Text', value: commander.oracle_text },
-			{ name: 'Power/Toughness', value: `${commander.power}/${commander.toughness}` },
-		)
-		.setImage(commander.image_uris.large);
+	try {
+		const imageEmbed = new EmbedBuilder()
+			.setTitle(commander.name)
+			.setURL(commander.scryfall_uri)
+			.addFields(
+				{ name: 'Mana Cost', value: commander.mana_cost },
+				{ name: 'Type', value: commander.type_line },
+				{ name: 'Oracle Text', value: commander.oracle_text },
+				{ name: 'Power/Toughness', value: `${commander.power}/${commander.toughness}` },
+			)
+			.setImage(commander.image_uris.large);
 
-	const confirm = new ButtonBuilder()
-		.setCustomId('confirm')
-		.setLabel('Confirm')
-		.setStyle(ButtonStyle.Primary)
-		.setDisabled(mulliganCount == -1);
+		const confirm = new ButtonBuilder()
+			.setCustomId('confirm')
+			.setLabel('Confirm')
+			.setStyle(ButtonStyle.Primary)
+			.setDisabled(mulliganCount == -1);
 
 
-	const mulligan = new ButtonBuilder()
-		.setCustomId('mulligan')
-		.setLabel('Mulligan')
-		.setStyle(ButtonStyle.Secondary)
-		.setDisabled(mulliganCount < 1);
+		const mulligan = new ButtonBuilder()
+			.setCustomId('mulligan')
+			.setLabel('Mulligan')
+			.setStyle(ButtonStyle.Secondary)
+			.setDisabled(mulliganCount < 1);
 
-	const row = new ActionRowBuilder()
-		.addComponents(confirm)
-		.addComponents(mulligan);
+		const row = new ActionRowBuilder()
+			.addComponents(confirm)
+			.addComponents(mulligan);
 
-	const mulliganMessage = mulliganCount > 1 ? `${mulliganCount} mulligans` : mulliganCount == 1 ? '1 mulligan' : 'no mulligans';
+		const mulliganMessage = mulliganCount > 1 ? `${mulliganCount} mulligans` : mulliganCount == 1 ? '1 mulligan' : 'no mulligans';
 
-	return {
-		content: mulliganCount == -1 ? `You have selected **${commander.name}** as your commander. Get building!` : `You have ${mulliganMessage} remaining.`,
-		embeds: [ imageEmbed ],
-		components: [ row ],
-	};
+		return {
+			content: mulliganCount == -1 ? `You have selected **${commander.name}** as your commander. Get building!` : `You have ${mulliganMessage} remaining.`,
+			embeds: [ imageEmbed ],
+			components: [ row ],
+		};
+	} catch (e) {
+		console.log(`Failed to build reply. Commander: ${commander}`);
+	}
 }
 
 async function getCommanders(interaction) {
