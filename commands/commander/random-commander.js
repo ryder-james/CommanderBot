@@ -1,7 +1,10 @@
-const { SlashCommandBuilder } = require('discord.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const { EmbedBuilder, SlashCommandBuilder } = require('discord.js');
+
+const cacheLocation = path.join('cache', 'CommanderCache.json');
 
 module.exports = {
-	cooldown: 10, // Seconds
 	data: new SlashCommandBuilder()
 		.setName('random-commander')
 		.setDescription('Generates a random commander, based on current format rules.'),
@@ -10,19 +13,49 @@ module.exports = {
 
 		let commanders = interaction.client.commanders;
 		if (commanders.length == 0) {
-			console.log('fetching commanders');
-			commanders = await getCommanderList(interaction);
+			if (fs.existsSync(cacheLocation))
+				commanders = JSON.parse(fs.readFileSync(cacheLocation));
+			else {
+				console.log('fetching commanders');
+				commanders = await getCommanderList(interaction);
+				buildCommanderCache(commanders);
+			}
+
 			interaction.client.commanders = commanders;
 		}
-		console.log(commanders.length);
-		await interaction.editReply(commanders[Math.floor(Math.random() * commanders.length)].name);
+
+		const commander = commanders[Math.floor(Math.random() * commanders.length)];
+
+		await interaction.editReply(buildSingleCommanderReply(commander));
 	},
 };
+
+function buildSingleCommanderReply(commander) {
+	const imageEmbed = new EmbedBuilder()
+		.setTitle(commander.name)
+		.setURL(commander.scryfall_uri)
+		.addFields(
+			{ name: 'Mana Cost', value: commander.mana_cost },
+			{ name: 'Type', value: commander.type_line },
+			{ name: 'Oracle Text', value: commander.oracle_text },
+			{ name: 'Power/Toughness', value: `${commander.power}/${commander.toughness}` },
+		)
+		.setImage(commander.image_uris.large);
+
+	return {
+		content: 'here u go',
+		embeds: [ imageEmbed ],
+	};
+}
 
 async function getCommanderList() {
 	const filters = [
 		{
 			'rule': 'is',
+			'value': 'commander',
+		},
+		{
+			'rule': 'legal',
 			'value': 'commander',
 		},
 		{
@@ -59,4 +92,13 @@ async function getCommanderList() {
 
 			return cards;
 		});
+}
+
+function buildCommanderCache(data) {
+	fs.writeFile(cacheLocation, JSON.stringify(data), error => {
+		if (error == null)
+			return;
+		console.error('Failed to cache commander list!');
+		console.error(error);
+	});
 }
