@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { EmbedBuilder, SlashCommandBuilder } = require('discord.js');
+const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const cacheLocation = path.join('cache', 'CommanderCache.json');
 
@@ -14,9 +14,26 @@ module.exports = {
 		const commanders = await getCommanders(interaction);
 		const commander = commanders[Math.floor(Math.random() * commanders.length)];
 
-		await interaction.editReply(buildSingleCommanderReply(commander));
+		const response = await interaction.editReply(buildSingleCommanderReply(commander));
+
+		await buildMulliganCallback(interaction, commanders, response);
 	},
 };
+
+async function buildMulliganCallback(interaction, commanders, response) {
+	const collectorFilter = i => i.user.id === interaction.user.id;
+	try {
+		const confirmation = await response.awaitMessageComponent({ filter: collectorFilter, time: 60_000 });
+
+		if (confirmation.customId === 'mulligan') {
+			console.log('mulligan!');
+			const rec_response = await confirmation.update(buildSingleCommanderReply(commanders[Math.floor(Math.random() * commanders.length)]));
+			buildMulliganCallback(interaction, commanders, rec_response);
+		}
+	} catch (e) {
+		await interaction.editReply({ content: 'Confirmation not received within 1 minute, cancelling', components: [] });
+	}
+}
 
 function buildSingleCommanderReply(commander) {
 	const imageEmbed = new EmbedBuilder()
@@ -30,9 +47,19 @@ function buildSingleCommanderReply(commander) {
 		)
 		.setImage(commander.image_uris.large);
 
+	const mulligan = new ButtonBuilder()
+		.setCustomId('mulligan')
+		.setLabel('Mulligan')
+		.setStyle(ButtonStyle.Primary);
+
+
+	const row = new ActionRowBuilder()
+		.addComponents(mulligan);
+
 	return {
 		content: 'here u go',
 		embeds: [ imageEmbed ],
+		components: [ row ],
 	};
 }
 
