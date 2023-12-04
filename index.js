@@ -39,4 +39,14 @@ for (const file of eventFiles) {
 		client.on(event.name, (...args) => event.execute(...args));
 }
 
+const gameEventsPath = path.join(__dirname, 'cache', 'events');
+const gameEventFiles = fs.readdirSync(gameEventsPath).filter(file => file.endsWith('.evt'));
+
+for (const file of gameEventFiles) {
+	const filePath = path.join(gameEventsPath, file);
+	const event = JSON.parse(fs.readFileSync(filePath));
+	client.events.set(file.substring(0, file.length - 4), event);
+	console.log(file.substring(file.indexOf('-')));
+}
+
 client.login(token);

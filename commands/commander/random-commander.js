@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, Collection, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const cacheLocation = path.join('cache', 'CommanderCache.json');
 
@@ -13,8 +13,10 @@ module.exports = {
 
 		const { events } = interaction.client;
 
-		if (!events.has(interaction.guild.id))
-			events.set(interaction.guild.id, { players: new Collection() });
+		if (!events.has(interaction.guild.id)) {
+			await interaction.reply({ content: 'A Host must first start an Event!', ephemeral: true });
+			return;
+		}
 
 		const event = events.get(interaction.guild.id);
 
@@ -30,6 +32,7 @@ module.exports = {
 		}
 
 		const response = await interaction.editReply(buildSingleCommanderReply(player.commander, player.mulligans));
+		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.evt`), JSON.stringify(event));
 
 		await buildMulliganCallback(interaction, commanders, response);
 	},
@@ -44,7 +47,8 @@ async function buildMulliganCallback(interaction, commanders, response) {
 	try {
 		const confirmation = await response.awaitMessageComponent({ filter: collectorFilter, time: 60_000 });
 
-		const player = interaction.client.events.get(interaction.guild.id).players.get(interaction.user.id);
+		const event = interaction.client.events.get(interaction.guild.id);
+		const player = event.players.get(interaction.user.id);
 
 		if (confirmation.customId === 'mulligan') {
 			player.mulligans--;
@@ -55,6 +59,8 @@ async function buildMulliganCallback(interaction, commanders, response) {
 			player.mulligans = -1;
 			await confirmation.update(buildSingleCommanderReply(player.commander, player.mulligans));
 		}
+
+		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.evt`), JSON.stringify(event));
 	} catch (e) {
 		await interaction.editReply({ content: 'Confirmation not received within 1 minute, cancelling', components: [] });
 	}

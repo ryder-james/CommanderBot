@@ -22,12 +22,12 @@
 			"const { SlashCommandBuilder } = require('discord.js');",
 			"",
 			"module.exports = {"
-				"data: new SlashCommandBuilder()"
-					".setName('$1')"
-					".setDescription('$2'),"
-				"async execute(interaction) {"
-					"$0"
-				"},"
+				"\tdata: new SlashCommandBuilder()"
+					"\t\t.setName('$1')"
+					"\t\t.setDescription('$2'),"
+				"\tasync execute(interaction) {"
+					"\t\t$0"
+				"\t},"
 			"};"
 		],
 		"description": "Boilerplate for a slash command"
