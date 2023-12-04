@@ -132,4 +132,4 @@ dist
 # config file with secret token
 secret.json
 
-CommanderCache.json
+cache/
