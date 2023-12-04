@@ -11,19 +11,7 @@ module.exports = {
 	async execute(interaction) {
 		await interaction.deferReply({ ephemeral: true });
 
-		let commanders = interaction.client.commanders;
-		if (commanders.length == 0) {
-			if (fs.existsSync(cacheLocation))
-				commanders = JSON.parse(fs.readFileSync(cacheLocation));
-			else {
-				console.log('fetching commanders');
-				commanders = await getCommanderList(interaction);
-				buildCommanderCache(commanders);
-			}
-
-			interaction.client.commanders = commanders;
-		}
-
+		const commanders = await getCommanders(interaction);
 		const commander = commanders[Math.floor(Math.random() * commanders.length)];
 
 		await interaction.editReply(buildSingleCommanderReply(commander));
@@ -48,7 +36,25 @@ function buildSingleCommanderReply(commander) {
 	};
 }
 
-async function getCommanderList() {
+async function getCommanders(interaction) {
+	let commanders = interaction.client.commanders;
+
+	if (commanders.length == 0) {
+		if (fs.existsSync(cacheLocation))
+			commanders = JSON.parse(fs.readFileSync(cacheLocation));
+		else {
+			console.log('fetching commanders');
+			commanders = await fetchCommanderList();
+			buildCommanderCache(commanders);
+		}
+
+		interaction.client.commanders = commanders;
+	}
+
+	return commanders;
+}
+
+async function fetchCommanderList() {
 	const filters = [
 		{
 			'rule': 'is',
