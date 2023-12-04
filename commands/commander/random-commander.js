@@ -37,11 +37,26 @@ async function getCommanderList() {
 		uri += `${filters[i].rule}%3A${filters[i].value}+`;
 	uri = uri.substring(0, uri.length - 1);
 
+	let cards = [];
 	return await fetch(uri)
 		.then(response => {
 			return response.json();
 		})
-		.then(data => {
-			return data.data;
+		.then(async data => {
+			cards = data.data;
+
+			let next_page = data.next_page;
+			while (next_page != undefined) {
+				await fetch(next_page)
+					.then(response => {
+						return response.json();
+					})
+					.then(next_data => {
+						next_page = next_data.next_page;
+						cards = cards.concat(next_data.data);
+					});
+			}
+
+			return cards;
 		});
 }
