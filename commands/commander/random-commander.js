@@ -1,4 +1,5 @@
 const { commanderFromId, getCommanders } = require('../../utility/commander.js');
+const cardCombiner = require('../../utility/cardCombiner.js');
 const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 module.exports = {
@@ -33,7 +34,7 @@ module.exports = {
 		if (event.picks == 1 || player.commander)
 			reply = buildSinglePickReply(player.commander ?? player.commanderOptions[0], commanders, player.mulligans);
 		else
-			reply = buildMultiPickReply(player.commanderOptions, commanders, player.mulligans);
+			reply = await buildMultiPickReply(player.commanderOptions, commanders, player.mulligans);
 
 		event.save();
 		const response = await interaction.editReply(reply);
@@ -86,7 +87,7 @@ async function buildMultiPickCallback(interaction, commanders, response) {
 			player.mulligans--;
 			player.commanderOptions = event.getCommanderOptions();
 
-			const reply = buildMultiPickReply(player.commanderOptions, commanders, player.mulligans);
+			const reply = await buildMultiPickReply(player.commanderOptions, commanders, player.mulligans);
 			const rec_response = await confirmation.update(reply);
 
 			buildMultiPickCallback(interaction, commanders, rec_response);
@@ -146,8 +147,7 @@ function buildSinglePickReply(commanderId, commanders, mulliganCount) {
 	}
 }
 
-function buildMultiPickReply(commanderOptions, commanders, mulliganCount) {
-	const firstCommander = commanderFromId(commanderOptions[0], commanders);
+async function buildMultiPickReply(commanderOptions, commanders, mulliganCount) {
 	const commanderFields = [];
 	let query = '(';
 
@@ -165,21 +165,15 @@ function buildMultiPickReply(commanderOptions, commanders, mulliganCount) {
 	query = encodeURI(query);
 
 	const url = `https://scryfall.com/search?q=${query}`;
-	const embeds = [
-		new EmbedBuilder()
-			.setTitle('Commander Options')
-			.setURL(url)
-			.addFields(commanderFields)
-			.setImage(firstCommander.image_uris.large),
-	];
 
-	for (let i = 1; i < commanderOptions.length; i++) {
-		const commander = commanderFromId(commanderOptions[i], commanders);
-		embeds.push(new EmbedBuilder()
-			.setURL(url)
-			.setImage(commander.image_uris.large),
-		);
-	}
+	const cardImages = commanderOptions.map(id => commanderFromId(id, commanders).image_uris.large);
+	const multiCardAttachment = await cardCombiner(cardImages);
+
+	const embed = new EmbedBuilder()
+		.setTitle('Commander Options')
+		.setURL(url)
+		.addFields(commanderFields)
+		.setImage('attachment://cards.png');
 
 	const confirmButtons = [];
 	for (let i = 0; i < commanderOptions.length; i++) {
@@ -207,7 +201,8 @@ function buildMultiPickReply(commanderOptions, commanders, mulliganCount) {
 
 	return {
 		content: `You have ${mulliganMessage} remaining.`,
-		embeds: embeds,
+		embeds: [ embed ],
+		files: [ multiCardAttachment ],
 		components: [ confirmRow, mulliganRow ],
 	};
 }
