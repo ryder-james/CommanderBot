@@ -140,6 +140,7 @@ function buildSinglePickReply(commanderId, commanders, mulliganCount) {
 		return {
 			content: mulliganCount == -1 ? `You have selected **${commander.name}** as your commander. Get building!` : `You have ${mulliganMessage} remaining.`,
 			embeds: [ imageEmbed ],
+			files: [],
 			components: [ row ],
 		};
 	} catch (e) {
@@ -166,7 +167,13 @@ async function buildMultiPickReply(commanderOptions, commanders, mulliganCount) 
 
 	const url = `https://scryfall.com/search?q=${query}`;
 
-	const cardImages = commanderOptions.map(id => commanderFromId(id, commanders).image_uris.large);
+	let cardImages;
+	try {
+		cardImages = commanderOptions.map(id => commanderFromId(id, commanders).image_uris.large);
+	} catch (e) {
+		console.log(commanders);
+		return;
+	}
 	const multiCardAttachment = await cardCombiner(cardImages);
 
 	const embed = new EmbedBuilder()
