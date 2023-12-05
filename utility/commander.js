@@ -3,8 +3,8 @@ const path = require('node:path');
 
 const cacheLocation = path.join('cache', 'CommanderCache.json');
 
-exports.getCommanders = async function getCommanders(interaction) {
-	let commanders = interaction.client.commanders;
+exports.getCommanders = async function getCommanders(client) {
+	let commanders = client.commanders;
 
 	if (commanders.length == 0) {
 		if (fs.existsSync(cacheLocation))
@@ -15,7 +15,7 @@ exports.getCommanders = async function getCommanders(interaction) {
 			buildCommanderCache(commanders);
 		}
 
-		interaction.client.commanders = commanders;
+		client.commanders = commanders;
 	}
 
 	return commanders;

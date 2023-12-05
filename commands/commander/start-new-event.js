@@ -1,5 +1,5 @@
-const getCommanders = require('../../utility/commander.js');
-const { CommanderEvent } = require('../../utility/CommanderEvent.js');
+const { getCommanders } = require('../../utility/commander.js');
+const CommanderEvent = require('../../utility/CommanderEvent.js');
 const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
@@ -19,16 +19,19 @@ module.exports = {
 				.setMaxValue(4),
 		),
 	async execute(interaction) {
+		await interaction.deferReply({ ephemeral: true });
+
 		const { events } = interaction.client;
 
-		const commanderIds = getCommanders().map(commander => commander.id);
+		const commanders = await getCommanders(interaction.client);
+		const commanderIds = commanders.map(commander => commander.id);
 		const mulligans = interaction.options.getInteger('mulligans') ?? 0;
-		const picks = interaction.options.getInteger('picks') ?? 0;
+		const picks = interaction.options.getInteger('picks') ?? 1;
 		const event = new CommanderEvent(commanderIds, interaction.guild.id, mulligans, picks);
 
 		events.set(interaction.guild.id, event);
 		event.save();
 
-		await interaction.reply({ content: 'Created!', ephemeral: true });
+		await interaction.editReply('Created!');
 	},
 };

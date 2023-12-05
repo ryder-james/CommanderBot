@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCommanders } = require('./commander.js');
 const { randomInt } = require('./random.js');
 
 const basePath = path.join('cache', 'events');
@@ -15,9 +16,12 @@ module.exports = class CommanderEvent {
 		this.players = new Map();
 	}
 
-	register(player) {
-		if (!this.players.has(player.id))
-			this.players.set(player.id);
+	register(playerId) {
+		if (this.players.has(playerId))
+			return;
+
+		this.players.set(playerId, { mulligans: this.maxMulligans });
+		this.save();
 	}
 
 	hasPlayer(playerId) {
@@ -28,10 +32,10 @@ module.exports = class CommanderEvent {
 		return this.players.get(playerId);
 	}
 
-	updatePlayer(player) {
-		if (!this.players.has(player.id))
-			throw new Error(`Player ${player.id} has not been registered!`);
-		this.players.set(player.id, player);
+	updatePlayer(playerId, player) {
+		if (!this.players.has(playerId))
+			throw new Error(`Player ${playerId} has not been registered!`);
+		this.players.set(playerId, player);
 	}
 
 	getCommanderOptions(allowDuplicates = false) {
@@ -48,17 +52,25 @@ module.exports = class CommanderEvent {
 
 		if (allowDuplicates)
 			commanderId = this.randomFrom(this.commanders);
-		else {
+		else
 			commanderId = this.randomFrom(this.availableCommanders);
 
-			const index = this.availableCommanders.indexOf(commanderId);
-			if (index > -1) {
-				this.usedCommanders.push(this.availableCommanders[index]);
-				this.availableCommanders.splice(index, 1);
-			}
-		}
-
 		return commanderId;
+	}
+
+	claimCommander(playerId, commanderId) {
+		if (!this.players.has(playerId))
+			throw new Error(`Player ${playerId} has not been registered!`);
+
+		const index = this.availableCommanders.indexOf(commanderId);
+		if (index > -1) {
+			this.usedCommanders.push(this.availableCommanders[index]);
+			this.availableCommanders.splice(index, 1);
+			this.players.get(playerId).commander = commanderId;
+		} else
+			throw new Error(`Commander ${commanderId} is not available!`);
+
+		this.save();
 	}
 
 	randomFrom(commanders) {
@@ -74,10 +86,10 @@ module.exports = class CommanderEvent {
 		};
 
 		const outputFile = path.join(basePath, `${this.eventId}.evt`);
-		fs.writeFileSync(outputFile, JSON.stringiy(obj));
+		fs.writeFileSync(outputFile, JSON.stringify(obj));
 	}
 
-	load(eventId) {
+	async load(client, eventId) {
 		const inputFile = path.join(basePath, `${eventId}.evt`);
 		const deserializedEvent = JSON.parse(fs.readFileSync(inputFile));
 
@@ -87,6 +99,8 @@ module.exports = class CommanderEvent {
 		this.picks = deserializedEvent.picks;
 		this.players = new Map(Object.entries(JSON.parse(deserializedEvent.players)));
 
+		const commanders = await getCommanders(client);
+		this.commanders = commanders.map(commander => commander.id);
 		this.availableCommanders = this.commanders.filter(commander => !this.usedCommanders.includes(commander));
 	}
 };
