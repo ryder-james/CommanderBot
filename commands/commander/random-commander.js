@@ -32,7 +32,7 @@ module.exports = {
 
 		let reply;
 		if (event.picks == 1 || player.commander)
-			reply = buildSinglePickReply(player.commander ?? player.commanderOptions[0], commanders, player.mulligans);
+			reply = await buildSinglePickReply(player.commander ?? player.commanderOptions[0], commanders, player.mulligans);
 		else
 			reply = await buildMultiPickReply(player.commanderOptions, commanders, player.mulligans);
 
@@ -58,7 +58,7 @@ async function buildSinglePickCallback(interaction, commanders, response) {
 			player.mulligans--;
 			player.commanderOptions = event.getCommanderOptions();
 
-			const reply = buildSinglePickReply(player.commanderOptions[0], commanders, player.mulligans);
+			const reply = await buildSinglePickReply(player.commanderOptions[0], commanders, player.mulligans);
 			const rec_response = await confirmation.update(reply);
 
 			buildSinglePickCallback(interaction, commanders, rec_response);
@@ -66,7 +66,9 @@ async function buildSinglePickCallback(interaction, commanders, response) {
 			player.mulligans = -1;
 			const commander = player.commanderOptions[0];
 			event.claimCommander(interaction.user.id, commander);
-			await confirmation.update(buildSinglePickReply(player.commander, commanders, player.mulligans));
+
+			const reply = await buildSinglePickReply(player.commander, commanders, player.mulligans);
+			await confirmation.update(reply);
 		}
 
 		event.save();
@@ -96,7 +98,9 @@ async function buildMultiPickCallback(interaction, commanders, response) {
 			const index = Number(confirmation.customId.substring(confirmation.customId.length - 1));
 			const commander = player.commanderOptions[index];
 			event.claimCommander(interaction.user.id, commander);
-			await confirmation.update(buildSinglePickReply(player.commander, commanders, player.mulligans));
+
+			const reply = await buildSinglePickReply(player.commander, commanders, player.mulligans);
+			await confirmation.update(reply);
 		}
 
 		event.save();
@@ -105,47 +109,71 @@ async function buildMultiPickCallback(interaction, commanders, response) {
 	}
 }
 
-function buildSinglePickReply(commanderId, commanders, mulliganCount) {
+async function buildSinglePickReply(commanderId, commanders, mulliganCount) {
 	const commander = commanderFromId(commanderId, commanders);
-	try {
-		const imageEmbed = new EmbedBuilder()
-			.setTitle(commander.name)
-			.setURL(commander.scryfall_uri)
-			.addFields(
-				{ name: 'Mana Cost', value: commander.mana_cost },
-				{ name: 'Type', value: commander.type_line },
-				{ name: 'Oracle Text', value: commander.oracle_text },
-				{ name: 'Power/Toughness', value: `${commander.power}/${commander.toughness}` },
-			)
-			.setImage(commander.image_uris.large);
+	const isDoubleSided = commander.card_faces?.length > 0;
 
-		const confirm = new ButtonBuilder()
-			.setCustomId('confirm')
-			.setLabel('Confirm')
-			.setStyle(ButtonStyle.Primary)
-			.setDisabled(mulliganCount == -1);
+	let manaCost;
+	let typeLine;
+	let oracleText;
+	let power;
+	let toughness;
+	let cardAttachment;
 
-		const mulligan = new ButtonBuilder()
-			.setCustomId('mulligan')
-			.setLabel('Mulligan')
-			.setStyle(ButtonStyle.Secondary)
-			.setDisabled(mulliganCount < 1);
+	if (isDoubleSided) {
+		manaCost = commander.card_faces[0].mana_cost;
+		typeLine = commander.card_faces[0].type_line;
+		oracleText = commander.card_faces[0].oracle_text;
+		power = commander.card_faces[0].power;
+		toughness = commander.card_faces[0].toughness;
 
-		const row = new ActionRowBuilder()
-			.addComponents(confirm)
-			.addComponents(mulligan);
-
-		const mulliganMessage = mulliganCount > 1 ? `${mulliganCount} mulligans` : mulliganCount == 1 ? '1 mulligan' : 'no mulligans';
-
-		return {
-			content: mulliganCount == -1 ? `You have selected **${commander.name}** as your commander. Get building!` : `You have ${mulliganMessage} remaining.`,
-			embeds: [ imageEmbed ],
-			files: [],
-			components: [ row ],
-		};
-	} catch (e) {
-		console.log(`Failed to build reply. Commander: ${commander}`);
+		const imageFront = commander.card_faces[0].image_uris.png;
+		const imageBack = commander.card_faces[1].image_uris.png;
+		cardAttachment = await cardCombiner([ imageFront, imageBack ]);
+	} else {
+		manaCost = commander.mana_cost;
+		typeLine = commander.type_line;
+		oracleText = commander.oracle_text;
+		power = commander.power;
+		toughness = commander.toughness;
+		cardAttachment = await cardCombiner([ commander.image_uris.png ]);
 	}
+
+	const imageEmbed = new EmbedBuilder()
+		.setTitle(commander.name)
+		.setURL(commander.scryfall_uri)
+		.addFields(
+			{ name: 'Mana Cost', value: manaCost },
+			{ name: 'Type', value: typeLine },
+			{ name: 'Oracle Text', value: oracleText },
+			{ name: 'Power/Toughness', value: `${power}/${toughness}` },
+		)
+		.setImage('attachment://cards.png');
+
+	const confirm = new ButtonBuilder()
+		.setCustomId('confirm')
+		.setLabel('Confirm')
+		.setStyle(ButtonStyle.Primary)
+		.setDisabled(mulliganCount == -1);
+
+	const mulligan = new ButtonBuilder()
+		.setCustomId('mulligan')
+		.setLabel('Mulligan')
+		.setStyle(ButtonStyle.Secondary)
+		.setDisabled(mulliganCount < 1);
+
+	const row = new ActionRowBuilder()
+		.addComponents(confirm)
+		.addComponents(mulligan);
+
+	const mulliganMessage = mulliganCount > 1 ? `${mulliganCount} mulligans` : mulliganCount == 1 ? '1 mulligan' : 'no mulligans';
+
+	return {
+		content: mulliganCount == -1 ? `You have selected **${commander.name}** as your commander. Get building!` : `You have ${mulliganMessage} remaining.`,
+		embeds: [ imageEmbed ],
+		files: [ cardAttachment ],
+		components: [ row ],
+	};
 }
 
 async function buildMultiPickReply(commanderOptions, commanders, mulliganCount) {
@@ -167,14 +195,16 @@ async function buildMultiPickReply(commanderOptions, commanders, mulliganCount) 
 
 	const url = `https://scryfall.com/search?q=${query}`;
 
-	let cardImages;
-	try {
-		cardImages = commanderOptions.map(id => commanderFromId(id, commanders).image_uris.large);
-	} catch (e) {
-		console.log(commanders);
-		return;
+	const commanderCards = commanderOptions.map(id => commanderFromId(id, commanders));
+	const cardImageUris = [];
+	for (let i = 0; i < commanderCards.length; i++) {
+		const card = commanderCards[i];
+		if (card.card_faces && card.card_faces.length > 0)
+			cardImageUris.push(card.card_faces[0].image_uris.png);
+		else
+			cardImageUris.push(card.image_uris.png);
 	}
-	const multiCardAttachment = await cardCombiner(cardImages);
+	const multiCardAttachment = await cardCombiner(cardImageUris);
 
 	const embed = new EmbedBuilder()
 		.setTitle('Commander Options')

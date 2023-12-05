@@ -30,22 +30,26 @@ async function fetchCommanderList() {
 		{
 			'rule': 'is',
 			'value': 'commander',
+			'type': ':',
 		},
 		{
 			'rule': 'legal',
 			'value': 'commander',
+			'type': ':',
 		},
 		{
 			'rule': 'game',
 			'value': 'paper',
+			'type': ':',
 		},
 	];
 
 	let uri = 'https://api.scryfall.com/cards/search?q=';
 
 	for (const i in filters)
-		uri += `${filters[i].rule}%3A${filters[i].value}+`;
+		uri += `${filters[i].rule}${filters[i].type}${filters[i].value} `;
 	uri = uri.substring(0, uri.length - 1);
+	uri = encodeURI(uri);
 
 	let cards = [];
 	return await fetch(uri)

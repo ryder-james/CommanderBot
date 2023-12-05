@@ -5,11 +5,13 @@ const cardWidth = 672;
 const cardHeight = 936;
 
 module.exports = async function cardCombiner(cards) {
-	if (!cards || cards.length <= 1)
+	if (!cards || cards.length < 1)
 		throw Error('Not enough cards provided!');
 
 	let canvas;
-	if (cards.length == 2)
+	if (cards.length == 1)
+		canvas = await cardLayout1(cards[0]);
+	else if (cards.length == 2)
 		canvas = await cardLayout2(cards[0], cards[1]);
 	else if (cards.length == 3)
 		canvas = await cardLayout3(cards[0], cards[1], cards[2]);
@@ -19,6 +21,17 @@ module.exports = async function cardCombiner(cards) {
 	const attachment = new AttachmentBuilder(await canvas.encode('png'), { name: 'cards.png' });
 	return attachment;
 };
+
+async function cardLayout1(card1) {
+	const canvas = Canvas.createCanvas(cardWidth, cardHeight);
+	const ctx = canvas.getContext('2d');
+
+	const image1 = await Canvas.loadImage(card1);
+
+	ctx.drawImage(image1, 0, 0, cardWidth, cardHeight);
+
+	return canvas;
+}
 
 async function cardLayout2(card1, card2) {
 	const canvas = Canvas.createCanvas(cardWidth * 2, cardHeight);
