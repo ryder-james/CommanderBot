@@ -56,6 +56,9 @@ for (const file of gameEventFiles) {
 		.then(() => ready(event, eventKey));
 }
 
+if (gameEventFiles.length == 0)
+	client.login(token);
+
 function ready(event, eventKey) {
 	client.events.set(eventKey, event);
 	client.login(token);
