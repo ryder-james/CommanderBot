@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const CommanderEvent = require('./utility/CommanderEvent');
 const { Client, Collection, GatewayIntentBits } = require('discord.js');
 const { token } = require('./secret.json');
 
@@ -48,20 +49,14 @@ if (!fs.existsSync(gameEventsPath))
 const gameEventFiles = fs.readdirSync(gameEventsPath).filter(file => file.endsWith('.evt'));
 
 for (const file of gameEventFiles) {
-	const filePath = path.join(gameEventsPath, file);
-
-	const event = JSON.parse(fs.readFileSync(filePath));
-
 	const eventKey = file.substring(0, file.length - 4);
-	const playerPath = path.join(gameEventsPath, `${eventKey}.plr`);
-	console.log(playerPath);
-	if (fs.existsSync(playerPath)) {
-		const rawData = fs.readFileSync(playerPath);
-		event.players = new Map(Object.entries(JSON.parse(rawData)));
-	} else
-		event.players = new Map();
 
-	client.events.set(eventKey, event);
+	const event = new CommanderEvent();
+	event.load(client, eventKey)
+		.then(() => ready(event, eventKey));
 }
 
-client.login(token);
+function ready(event, eventKey) {
+	client.events.set(eventKey, event);
+	client.login(token);
+}

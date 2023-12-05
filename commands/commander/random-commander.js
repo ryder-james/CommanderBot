@@ -1,76 +1,111 @@
-const fs = require('node:fs');
-const path = require('node:path');
+const { commanderFromId, getCommanders } = require('../../utility/commander.js');
 const { EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-
-const cacheLocation = path.join('cache', 'CommanderCache.json');
 
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('random-commander')
 		.setDescription('Generates a random commander, based on current format rules.'),
 	async execute(interaction) {
-		await interaction.deferReply();
-
 		const { events } = interaction.client;
 
 		if (!events.has(interaction.guild.id)) {
-			await interaction.editReply('A Host must first start an Event!');
+			await interaction.reply({ content: 'A Host must first start an Event!', ephemeral: true });
 			return;
 		}
 
 		const event = events.get(interaction.guild.id);
 
-		if (!event.players.has(interaction.user.id))
-			event.players.set(interaction.user.id, { 'mulligans': event.mulligans });
-
-		const player = event.players.get(interaction.user.id);
-		const commanders = await getCommanders(interaction);
-
-		if (!player.commanderId) {
-			player.mulligans = event.mulligans;
-			player.commanderId = getRandomCommander(commanders).id;
+		if (!event.hasPlayer(interaction.user.id)) {
+			await interaction.reply({ content: 'Please register for the Event first using /register.', ephemeral: true });
+			return;
 		}
 
-		const response = await interaction.editReply(buildSingleCommanderReply(commanderFromId(player.commanderId, commanders), player.mulligans));
-		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.plr`), JSON.stringify(Object.fromEntries(event.players)));
+		const player = event.getPlayer(interaction.user.id);
 
-		await buildMulliganCallback(interaction, commanders, response);
+		await interaction.deferReply({ ephemeral: player.commander != null });
+
+		const commanders = await getCommanders(interaction.client);
+
+		if (!player.commanderOptions || player.commanderOptions.length == 0)
+			player.commanderOptions = event.getCommanderOptions();
+
+		let reply;
+		if (event.picks == 1 || player.commander)
+			reply = buildSinglePickReply(player.commander ?? player.commanderOptions[0], commanders, player.mulligans);
+		else
+			reply = buildMultiPickReply(player.commanderOptions, commanders, player.mulligans);
+
+		event.save();
+		const response = await interaction.editReply(reply);
+
+		if (event.picks == 1)
+			await buildSinglePickCallback(interaction, commanders, response);
+		else
+			await buildMultiPickCallback(interaction, commanders, response);
 	},
 };
 
-function commanderFromId(commanderId, commanders) {
-	return commanders.find(commander => commander.id === commanderId);
-}
-
-function getRandomCommander(commanders) {
-	return commanders[Math.floor(Math.random() * commanders.length)];
-}
-
-async function buildMulliganCallback(interaction, commanders, response) {
+async function buildSinglePickCallback(interaction, commanders, response) {
 	const collectorFilter = i => i.user.id === interaction.user.id;
 	try {
 		const confirmation = await response.awaitMessageComponent({ filter: collectorFilter, time: 60_000 });
 
 		const event = interaction.client.events.get(interaction.guild.id);
-		const player = event.players.get(interaction.user.id);
+		const player = event.getPlayer(interaction.user.id);
 
 		if (confirmation.customId === 'mulligan') {
 			player.mulligans--;
-			player.commanderId = getRandomCommander(commanders).id;
-			const rec_response = await confirmation.update(buildSingleCommanderReply(commanderFromId(player.commanderId, commanders), player.mulligans));
-			buildMulliganCallback(interaction, commanders, rec_response);
+			player.commanderOptions = event.getCommanderOptions();
+
+			const reply = buildSinglePickReply(player.commanderOptions[0], commanders, player.mulligans);
+			const rec_response = await confirmation.update(reply);
+
+			buildSinglePickCallback(interaction, commanders, rec_response);
 		} else if (confirmation.customId === 'confirm') {
 			player.mulligans = -1;
-			await confirmation.update(buildSingleCommanderReply(commanderFromId(player.commanderId, commanders), player.mulligans));
+			const commander = player.commanderOptions[0];
+			event.claimCommander(interaction.user.id, commander);
+			await confirmation.update(buildSinglePickReply(player.commander, commanders, player.mulligans));
 		}
 
-		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.plr`), JSON.stringify(Object.fromEntries(event.players)));
+		event.save();
 	} catch (e) {
 		await interaction.editReply({ content: 'Confirmation not received within 1 minute, cancelling', components: [] });
 	}
 }
 
-function buildSingleCommanderReply(commander, mulliganCount) {
+async function buildMultiPickCallback(interaction, commanders, response) {
+	const collectorFilter = i => i.user.id === interaction.user.id;
+	try {
+		const confirmation = await response.awaitMessageComponent({ filter: collectorFilter, time: 60_000 });
+
+		const event = interaction.client.events.get(interaction.guild.id);
+		const player = event.getPlayer(interaction.user.id);
+
+		if (confirmation.customId === 'mulligan') {
+			player.mulligans--;
+			player.commanderOptions = event.getCommanderOptions();
+
+			const reply = buildMultiPickReply(player.commanderOptions, commanders, player.mulligans);
+			const rec_response = await confirmation.update(reply);
+
+			buildMultiPickCallback(interaction, commanders, rec_response);
+		} else if (confirmation.customId.startsWith('confirm-')) {
+			player.mulligans = -1;
+			const index = Number(confirmation.customId.substring(confirmation.customId.length - 1));
+			const commander = player.commanderOptions[index];
+			event.claimCommander(interaction.user.id, commander);
+			await confirmation.update(buildSinglePickReply(player.commander, commanders, player.mulligans));
+		}
+
+		event.save();
+	} catch (e) {
+		await interaction.editReply({ content: 'Confirmation not received within 1 minute, cancelling', components: [] });
+	}
+}
+
+function buildSinglePickReply(commanderId, commanders, mulliganCount) {
+	const commander = commanderFromId(commanderId, commanders);
 	try {
 		const imageEmbed = new EmbedBuilder()
 			.setTitle(commander.name)
@@ -88,7 +123,6 @@ function buildSingleCommanderReply(commander, mulliganCount) {
 			.setLabel('Confirm')
 			.setStyle(ButtonStyle.Primary)
 			.setDisabled(mulliganCount == -1);
-
 
 		const mulligan = new ButtonBuilder()
 			.setCustomId('mulligan')
@@ -112,75 +146,68 @@ function buildSingleCommanderReply(commander, mulliganCount) {
 	}
 }
 
-async function getCommanders(interaction) {
-	let commanders = interaction.client.commanders;
+function buildMultiPickReply(commanderOptions, commanders, mulliganCount) {
+	const firstCommander = commanderFromId(commanderOptions[0], commanders);
+	const commanderFields = [];
+	let query = '(';
 
-	if (commanders.length == 0) {
-		if (fs.existsSync(cacheLocation))
-			commanders = JSON.parse(fs.readFileSync(cacheLocation));
-		else {
-			console.log('fetching commanders');
-			commanders = await fetchCommanderList();
-			buildCommanderCache(commanders);
-		}
-
-		interaction.client.commanders = commanders;
+	for (const i in commanderOptions) {
+		const commander = commanderFromId(commanderOptions[i], commanders);
+		const choice = Number(i) + 1;
+		commanderFields.push({
+			name: `Commander Choice #${choice}:`,
+			value: commander.name,
+		});
+		query += `"${commander.name}" or `;
 	}
+	query = query.substring(0, query.length - 4);
+	query += ') game:paper';
+	query = encodeURI(query);
 
-	return commanders;
-}
-
-async function fetchCommanderList() {
-	const filters = [
-		{
-			'rule': 'is',
-			'value': 'commander',
-		},
-		{
-			'rule': 'legal',
-			'value': 'commander',
-		},
-		{
-			'rule': 'game',
-			'value': 'paper',
-		},
+	const url = `https://scryfall.com/search?q=${query}`;
+	const embeds = [
+		new EmbedBuilder()
+			.setTitle('Commander Options')
+			.setURL(url)
+			.addFields(commanderFields)
+			.setImage(firstCommander.image_uris.large),
 	];
 
-	let uri = 'https://api.scryfall.com/cards/search?q=';
+	for (let i = 1; i < commanderOptions.length; i++) {
+		const commander = commanderFromId(commanderOptions[i], commanders);
+		embeds.push(new EmbedBuilder()
+			.setURL(url)
+			.setImage(commander.image_uris.large),
+		);
+	}
 
-	for (const i in filters)
-		uri += `${filters[i].rule}%3A${filters[i].value}+`;
-	uri = uri.substring(0, uri.length - 1);
+	const confirmButtons = [];
+	for (let i = 0; i < commanderOptions.length; i++) {
+		const confirmButton = new ButtonBuilder()
+			.setCustomId(`confirm-${i}`)
+			.setLabel(`Pick #${i + 1}`)
+			.setStyle(ButtonStyle.Primary)
+			.setDisabled(mulliganCount == -1);
+		confirmButtons.push(confirmButton);
+	}
 
-	let cards = [];
-	return await fetch(uri)
-		.then(response => {
-			return response.json();
-		})
-		.then(async data => {
-			cards = data.data;
+	const confirmRow = new ActionRowBuilder()
+		.addComponents(confirmButtons);
 
-			let next_page = data.next_page;
-			while (next_page != undefined) {
-				await fetch(next_page)
-					.then(response => {
-						return response.json();
-					})
-					.then(next_data => {
-						next_page = next_data.next_page;
-						cards = cards.concat(next_data.data);
-					});
-			}
+	const mulligan = new ButtonBuilder()
+		.setCustomId('mulligan')
+		.setLabel('Mulligan')
+		.setStyle(ButtonStyle.Secondary)
+		.setDisabled(mulliganCount < 1);
 
-			return cards;
-		});
-}
+	const mulliganRow = new ActionRowBuilder()
+		.addComponents(mulligan);
 
-function buildCommanderCache(data) {
-	fs.writeFile(cacheLocation, JSON.stringify(data), error => {
-		if (error == null)
-			return;
-		console.error('Failed to cache commander list!');
-		console.error(error);
-	});
+	const mulliganMessage = mulliganCount > 1 ? `${mulliganCount} mulligans` : mulliganCount == 1 ? '1 mulligan' : 'no mulligans';
+
+	return {
+		content: `You have ${mulliganMessage} remaining.`,
+		embeds: embeds,
+		components: [ confirmRow, mulliganRow ],
+	};
 }
