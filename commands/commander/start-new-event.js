@@ -1,5 +1,5 @@
-const fs = require('node:fs');
-const path = require('node:path');
+const getCommanders = require('../../utility/commander.js');
+const { CommanderEvent } = require('../../utility/CommanderEvent.js');
 const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
@@ -8,26 +8,26 @@ module.exports = {
 		.setDescription('Create a new event')
 		.addIntegerOption(option =>
 			option.setName('mulligans')
-				.setDescription('The maximum number of rerolls allowed on commander pick.')
+				.setDescription('The maximum number of rerolls allowed on commander pick (0-3). Default: 0')
 				.setMinValue(0)
 				.setMaxValue(3),
+		)
+		.addIntegerOption(option =>
+			option.setName('picks')
+				.setDescription('The number of Commanders the player can pick from (1-4). Default: 1')
+				.setMinValue(1)
+				.setMaxValue(4),
 		),
 	async execute(interaction) {
 		const { events } = interaction.client;
 
-		events.set(interaction.guild.id, { players: new Map() });
+		const commanderIds = getCommanders().map(commander => commander.id);
+		const mulligans = interaction.options.getInteger('mulligans') ?? 0;
+		const picks = interaction.options.getInteger('picks') ?? 0;
+		const event = new CommanderEvent(commanderIds, interaction.guild.id, mulligans, picks);
 
-		const event = events.get(interaction.guild.id);
-
-		event.mulligans = interaction.options.getInteger('mulligans') ?? 0;
-		const eventJson = JSON.stringify(event, (key, value) => {
-			if (key == 'players')
-				return undefined;
-			return value;
-		});
-		fs.writeFileSync(path.join('cache', 'events', `${interaction.guild.id}.evt`), eventJson);
-		if (fs.existsSync(path.join('cache', 'events', `${interaction.guild.id}.plr`)))
-			fs.rmSync(path.join('cache', 'events', `${interaction.guild.id}.plr`));
+		events.set(interaction.guild.id, event);
+		event.save();
 
 		await interaction.reply({ content: 'Created!', ephemeral: true });
 	},

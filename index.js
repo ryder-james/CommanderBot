@@ -54,7 +54,6 @@ for (const file of gameEventFiles) {
 
 	const eventKey = file.substring(0, file.length - 4);
 	const playerPath = path.join(gameEventsPath, `${eventKey}.plr`);
-	console.log(playerPath);
 	if (fs.existsSync(playerPath)) {
 		const rawData = fs.readFileSync(playerPath);
 		event.players = new Map(Object.entries(JSON.parse(rawData)));
